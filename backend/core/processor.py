@@ -1273,20 +1273,21 @@ def process_excel(in_path, out_path, progress_callback=None, tolerance=10, cut_m
 
         from io import BytesIO
 
-        def safe_load_workbook(path):
+        def safe_load_workbook(path, read_only=False):
             for attempt in range(3):
                 try:
-                    with open(path, "rb") as f:
-                        data = f.read()
-                    return load_workbook(BytesIO(data), data_only=True)
+                    return load_workbook(path, data_only=True, read_only=read_only)
                 except (InvalidFileException, KeyError, zipfile.BadZipFile, OSError) as e:
                     if attempt < 2:
                         time.sleep(1.5)
                     else:
                         raise e
 
-        wb_in = safe_load_workbook(in_path)
-        wb_out = safe_load_workbook(out_path)
+        import gc
+        gc.collect()
+
+        wb_in = safe_load_workbook(in_path, read_only=True)
+        wb_out = safe_load_workbook(out_path, read_only=False)
         
         # Format INFO sheet with big bold font
         ws_info = wb_out["INFO"]

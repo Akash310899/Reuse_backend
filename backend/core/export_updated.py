@@ -351,8 +351,11 @@ def generate_updated_export(processed_path: str, output_path: str):
     ws.freeze_panes = "A3"
 
     # --- Add OLD sheet from processed file ---
+    import gc
+    gc.collect()
+    
     try:
-        wb_processed = load_workbook(BytesIO(open(processed_path, "rb").read()), data_only=True)
+        wb_processed = load_workbook(processed_path, data_only=True, read_only=True)
 
         # Copy UNUSED STOCK sheet
         if "UNUSED STOCK" in wb_processed.sheetnames:
