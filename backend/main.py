@@ -5,6 +5,7 @@ import base64
 import tempfile
 import threading
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from backend.core.processor import process_excel
@@ -53,17 +54,13 @@ def _run_job(task_id: str, in_path: str, safe_name: str, tolerance: int,
             swap_modify=swap_modify,
         )
 
-        on_progress(96, "Encoding processed file...")
-
-        with open(out_path, "rb") as f:
-            processed_b64 = base64.b64encode(f.read()).decode("utf-8")
+        on_progress(96, "Preparing files for download...")
 
         on_progress(97, "Generating updated format...")
-        updated_b64 = None
+        has_updated = False
         try:
             generate_updated_export(out_path, updated_path)
-            with open(updated_path, "rb") as f:
-                updated_b64 = base64.b64encode(f.read()).decode("utf-8")
+            has_updated = os.path.exists(updated_path)
         except Exception as ue:
             print(f"Updated export generation failed: {ue}")
 
@@ -75,12 +72,11 @@ def _run_job(task_id: str, in_path: str, safe_name: str, tolerance: int,
         except Exception as e:
             print("Could not read summary:", e)
 
-        # Clean up temp files
-        for p in [in_path, out_path, updated_path]:
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+        # Do NOT delete out_path and updated_path here; they will be served via download endpoints
+        try:
+            os.remove(in_path)
+        except Exception:
+            pass
 
         with _jobs_lock:
             _jobs[task_id].update({
@@ -88,10 +84,8 @@ def _run_job(task_id: str, in_path: str, safe_name: str, tolerance: int,
                 "progress": 100,
                 "message": "Optimization complete!",
                 "result": {
-                    "processed_file_b64": processed_b64,
                     "processed_filename": f"PROCESSED_{safe_name}",
-                    "updated_file_b64": updated_b64,
-                    "updated_filename": updated_name if updated_b64 else None,
+                    "updated_filename": updated_name if has_updated else None,
                     "summary": summary_data,
                 },
             })
@@ -176,11 +170,38 @@ def get_status(task_id: str):
     }
     if job["status"] == "completed":
         response["result"] = job["result"]
-        # Clean up job from memory after delivering results once
-        with _jobs_lock:
-            _jobs.pop(task_id, None)
     elif job["status"] == "error":
-        with _jobs_lock:
-            _jobs.pop(task_id, None)
+        pass
 
     return response
+
+
+@app.get("/api/download/{task_id}/{file_type}")
+def download_file(task_id: str, file_type: str):
+    """Download the processed or updated file."""
+    with _jobs_lock:
+        job = _jobs.get(task_id)
+    
+    if not job or job["status"] != "completed":
+        raise HTTPException(status_code=404, detail="File not ready or task not found.")
+    
+    result = job["result"]
+    
+    if file_type == "processed":
+        filename = result.get("processed_filename")
+        prefix = f"{task_id}_PROCESSED_"
+    elif file_type == "updated":
+        filename = result.get("updated_filename")
+        prefix = f"{task_id}_UPDATED_"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file type requested.")
+    
+    if not filename:
+        raise HTTPException(status_code=404, detail="File not found.")
+        
+    filepath = os.path.join(UPLOAD_DIR, f"{prefix}{filename.replace('PROCESSED_', '').replace('UPDATED_', '')}")
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="File has been deleted from server.")
+        
+    return FileResponse(filepath, filename=filename, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

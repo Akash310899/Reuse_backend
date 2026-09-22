@@ -687,14 +687,29 @@ def process_excel(in_path, out_path, progress_callback=None, tolerance=10, cut_m
                 scrap_candidates = []
                 seen_s_id = set()
                 for (rule_code, remark, constraint) in modify_rules:
-                    for s in scrap_by_base.get(rule_code, []):
-                        if s.get('Balance', 0) > 0 and id(s) not in seen_s_id:
-                            seen_s_id.add(id(s))
-                            scrap_candidates.append(s)
-                    for s in scrap_by_code.get(rule_code, []):
-                        if s.get('Balance', 0) > 0 and id(s) not in seen_s_id:
-                            seen_s_id.add(id(s))
-                            scrap_candidates.append(s)
+                    # Clean scrap_by_base
+                    s_base_list = scrap_by_base.get(rule_code, [])
+                    if s_base_list:
+                        active_s_base = []
+                        for s in s_base_list:
+                            if s.get('Balance', 0) > 0:
+                                active_s_base.append(s)
+                                if id(s) not in seen_s_id:
+                                    seen_s_id.add(id(s))
+                                    scrap_candidates.append(s)
+                        scrap_by_base[rule_code] = active_s_base
+
+                    # Clean scrap_by_code
+                    s_code_list = scrap_by_code.get(rule_code, [])
+                    if s_code_list:
+                        active_s_code = []
+                        for s in s_code_list:
+                            if s.get('Balance', 0) > 0:
+                                active_s_code.append(s)
+                                if id(s) not in seen_s_id:
+                                    seen_s_id.add(id(s))
+                                    scrap_candidates.append(s)
+                        scrap_by_code[rule_code] = active_s_code
 
                 for s in scrap_candidates:
                     scrap_base = s.get('BASE', base_code(s.get('CODE', '')))
@@ -739,14 +754,29 @@ def process_excel(in_path, out_path, progress_callback=None, tolerance=10, cut_m
             inv_candidates = []
             seen_cand_idx = set()
             for (rule_code, remark, constraint) in modify_rules:
-                for inv in inv_by_base.get(rule_code, []):
-                    if not inv["USED"] and inv["old_idx"] not in seen_cand_idx:
-                        seen_cand_idx.add(inv["old_idx"])
-                        inv_candidates.append(inv)
-                for inv in inv_by_code.get(rule_code, []):
-                    if not inv["USED"] and inv["old_idx"] not in seen_cand_idx:
-                        seen_cand_idx.add(inv["old_idx"])
-                        inv_candidates.append(inv)
+                # Clean inv_by_base
+                base_list = inv_by_base.get(rule_code, [])
+                if base_list:
+                    active_base = []
+                    for inv in base_list:
+                        if not inv["USED"]:
+                            active_base.append(inv)
+                            if inv["old_idx"] not in seen_cand_idx:
+                                seen_cand_idx.add(inv["old_idx"])
+                                inv_candidates.append(inv)
+                    inv_by_base[rule_code] = active_base
+
+                # Clean inv_by_code
+                code_list = inv_by_code.get(rule_code, [])
+                if code_list:
+                    active_code = []
+                    for inv in code_list:
+                        if not inv["USED"]:
+                            active_code.append(inv)
+                            if inv["old_idx"] not in seen_cand_idx:
+                                seen_cand_idx.add(inv["old_idx"])
+                                inv_candidates.append(inv)
+                    inv_by_code[rule_code] = active_code
 
             # --- STEP B: Try inventory ---
             if details is None:
